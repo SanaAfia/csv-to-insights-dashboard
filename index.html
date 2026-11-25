@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Messy CSV → Insights | Instant Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#301728; --card:#3D1F33; --accent:#FFEDA8; --gold:#F4D06F;
+    --rose:#E8998D; --plum:#C87D87; --cream:#FAF3DD; --mauve:#D8C3B8;
+    --border:rgba(255,237,168,.18);
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--cream);font-family:'Plus Jakarta Sans',system-ui,sans-serif}
+  h1,h2,h3,.serif{font-family:'Playfair Display',Georgia,serif}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:1.25rem;box-shadow:0 18px 45px rgba(0,0,0,.22)}
+  .accent{color:var(--accent)}
+  .muted{color:var(--mauve)}
+  .btn{border:1px solid var(--border);background:rgba(255,237,168,.08);color:var(--cream);transition:.25s}
+  .btn:hover{background:rgba(255,237,168,.16);transform:translateY(-2px)}
+  .btn-primary{background:var(--accent);color:#301728;border-color:var(--accent);font-weight:700}
+  .btn-primary:hover{background:#fff3c2}
+  select,input,textarea{background:#2b1424;border:1px solid var(--border);color:var(--cream);border-radius:.75rem}
+  select:focus,input:focus,textarea:focus{outline:2px solid rgba(255,237,168,.45)}
+  .dropzone{border:2px dashed rgba(255,237,168,.35);transition:.3s}
+  .dropzone:hover{transform:translateY(-2px);border-color:rgba(255,237,168,.6)}
+  .dropzone.dragging{border-color:var(--accent);box-shadow:0 0 0 4px rgba(255,237,168,.12),0 0 35px rgba(255,237,168,.28);animation:pulseGlow 1.4s infinite}
+  @keyframes pulseGlow{0%,100%{box-shadow:0 0 0 4px rgba(255,237,168,.10),0 0 25px rgba(255,237,168,.18)}50%{box-shadow:0 0 0 7px rgba(255,237,168,.16),0 0 45px rgba(255,237,168,.32)}}
+  @keyframes fadeSlideUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+  .reveal{opacity:0;animation:fadeSlideUp .7s cubic-bezier(.22,.75,.25,1) forwards}
+  .d1{animation-delay:.1s}.d2{animation-delay:.2s}.d3{animation-delay:.3s}.d4{animation-delay:.4s}.d5{animation-delay:.5s}
+  .missing{background:rgba(244,208,111,.16);color:var(--gold);border:1px solid rgba(244,208,111,.35);border-radius:999px;padding:1px 8px;font-size:11px}
+  .toast{position:fixed;right:24px;bottom:24px;transform:translateY(140%);transition:.45s cubic-bezier(.2,.8,.2,1);z-index:60}
+  .toast.show{transform:translateY(0)}
+  .scroll::-webkit-scrollbar{width:9px;height:9px}
+  .scroll::-webkit-scrollbar-thumb{background:rgba(255,237,168,.22);border-radius:99px}
+  .scroll::-webkit-scrollbar-track{background:transparent}
+  table{border-collapse:separate;border-spacing:0}
+  th,td{border-bottom:1px solid rgba(255,237,168,.09)}
+  th{position:sticky;top:0;background:#331a2b;z-index:2}
+</style>
+</head>
+<body class="min-h-screen">
+
+<div class="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+
+  <!-- HERO -->
+  <header class="reveal d1 mb-8">
+    <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
+      <div>
+        <p class="uppercase tracking-[0.28em] text-xs muted mb-3">Client-side data intelligence</p>
+        <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold leading-[1.05]">
+          Messy CSV<br><span class="accent italic">→ Instant Insights</span>
+        </h1>
+        <p class="muted mt-4 max-w-xl text-sm sm:text-base">
+          Drop a CSV, paste raw data, or explore the sample dataset. Your file never leaves this browser.
+        </p>
+      </div>
+      <div class="card p-5 lg:w-[380px]">
+        <div id="dropzone" class="dropzone rounded-xl p-6 text-center cursor-pointer">
+          <div class="text-3xl mb-2">⬇︎</div>
+          <p class="font-semibold">Drag & drop your CSV</p>
+          <p class="muted text-xs mt-1">or click to browse • quoted commas supported</p>
+          <input id="fileInput" type="file" accept=".csv,text/csv" class="hidden" />
+        </div>
+        <div class="grid grid-cols-3 gap-2 mt-3">
+          <button id="sampleBtn" class="btn btn-primary rounded-xl px-3 py-2 text-xs">Load Sample</button>
+          <button id="pasteBtn" class="btn rounded-xl px-3 py-2 text-xs">Paste CSV</button>
+          <button id="clearBtn" class="btn rounded-xl px-3 py-2 text-xs">Clear</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- PASTE MODAL -->
+  <div id="pasteModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="card w-full max-w-2xl p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-xl font-semibold">Paste raw CSV</h3>
+        <button id="closePaste" class="btn rounded-lg px-3 py-1 text-sm">✕</button>
+      </div>
+      <textarea id="pasteArea" rows="10" class="w-full p-3 text-sm scroll" placeholder="name,category,sales&#10;Ava,Electronics,1200"></textarea>
+      <div class="flex justify-end gap-2 mt-4">
+        <button id="cancelPaste" class="btn rounded-xl px-4 py-2 text-sm">Cancel</button>
+        <button id="usePaste" class="btn btn-primary rounded-xl px-4 py-2 text-sm">Use data</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+    <div class="card reveal d2 p-5">
+      <p class="muted text-xs uppercase tracking-widest">Total records</p>
+      <p id="kpiRows" class="serif text-4xl font-bold accent mt-2">0</p>
+      <p class="muted text-xs mt-2">Data rows detected</p>
+    </div>
+    <div class="card reveal d2 p-5">
+      <p class="muted text-xs uppercase tracking-widest">Total fields</p>
+      <p id="kpiCols" class="serif text-4xl font-bold accent mt-2">0</p>
+      <p id="fieldBreakdown" class="muted text-xs mt-2">Numeric vs categorical</p>
+    </div>
+    <div class="card reveal d3 p-5">
+      <p class="muted text-xs uppercase tracking-widest">Completeness</p>
+      <p><span id="kpiComplete" class="serif text-4xl font-bold accent">0</span><span class="accent text-xl">%</span></p>
+      <p id="missingDetail" class="muted text-xs mt-2">0 missing cells</p>
+    </div>
+    <div class="card reveal d3 p-5">
+      <p class="muted text-xs uppercase tracking-widest">Primary numeric</p>
+      <p id="kpiMean" class="serif text-3xl font-bold accent mt-2">—</p>
+      <p id="kpiMedian" class="muted text-xs mt-2">Median: —</p>
+    </div>
+  </section>
+
+  <!-- INSIGHTS -->
+  <section class="card reveal d3 p-6 mb-6 border-l-4" style="border-left-color:var(--accent)">
+    <div class="flex items-center justify-between gap-4 mb-4">
+      <h2 class="text-2xl font-semibold">Automated insights</h2>
+      <button id="copySummary" class="btn rounded-xl px-4 py-2 text-sm">Copy executive summary</button>
+    </div>
+    <ul id="insights" class="space-y-3 text-sm"></ul>
+  </section>
+
+  <!-- CHARTS -->
+  <section class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+    <div class="card reveal d4 p-5">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <h2 class="text-xl font-semibold">Distribution explorer</h2>
+        <select id="distCol" class="px-3 py-2 text-sm max-w-full"></select>
+      </div>
+      <div class="h-[320px]"><canvas id="distChart"></canvas></div>
+    </div>
+    <div class="card reveal d4 p-5">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <h2 class="text-xl font-semibold">Trend & comparison</h2>
+        <div class="flex gap-2">
+          <select id="xCol" class="px-3 py-2 text-sm"></select>
+          <select id="yCol" class="px-3 py-2 text-sm"></select>
+        </div>
+      </div>
+      <div class="h-[320px]"><canvas id="trendChart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- TABLE -->
+  <section class="card reveal d5 p-5 mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+      <div>
+        <h2 class="text-xl font-semibold">Data preview</h2>
+        <p class="muted text-xs mt-1">First 15 rows • missing values highlighted</p>
+      </div>
+      <button id="downloadBtn" class="btn btn-primary rounded-xl px-4 py-2 text-sm">Clean & download CSV</button>
+    </div>
+    <div class="overflow-auto scroll rounded-xl border" style="border-color:var(--border);max-height:420px">
+      <table class="w-full text-sm" id="previewTable"></table>
+    </div>
+  </section>
+
+  <footer class="text-center muted text-xs pb-6">
+    Built for private, in-browser CSV exploration • No uploads, accounts, or external APIs
+    <div class="mt-2">Build By Sana Afia</div>
+  </footer>
+</div>
+
+<div id="toast" class="toast card px-5 py-3 text-sm accent font-semibold">Copied to clipboard ✓</div>
+
+<script>
+const PALETTE=['#FFEDA8','#F4D06F','#E8998D','#C87D87','#FAF3DD'];
+let rows=[],headers=[],charts={dist:null,trend:null};
+
+const $=id=>document.getElementById(id);
+const isNum=v=>v!==''&&v!==null&&v!==undefined&&!isNaN(Number(v));
+const fmt=n=>Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
+
+/* CSV parser: quoted commas, escaped quotes, whitespace, blank rows */
+function parseCSV(text){
+  const out=[];let row=[],field='',q=false;
+  text=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){ if(text[i+1]==='"'){field+='"';i++;} else q=false; }
+      else field+=c;
+    }else{
+      if(c==='"')q=true;
+      else if(c===','){row.push(field);field='';}
+      else if(c==='\n'){row.push(field);out.push(row);row=[];field='';}
+      else field+=c;
+    }
+  }
+  row.push(field);out.push(row);
+  return out.filter(r=>r.some(c=>String(c).trim()!==''));
+}
+
+function loadCSV(text){
+  const parsed=parseCSV(text);
+  if(parsed.length<2){alert('Please provide a CSV with a header row and at least one data row.');return;}
+  headers=parsed[0].map(h=>String(h).trim()||'Column');
+  rows=parsed.slice(1).map(r=>{
+    const o={};headers.forEach((h,i)=>o[h]=String(r[i]??'').trim());
+    return o;
+  });
+  buildDashboard();
+}
+
+function columnType(col){
+  const vals=rows.map(r=>r[col]).filter(v=>v!=='');
+  return vals.length&&vals.every(isNum)?'numeric':'categorical';
+}
+function numericCols(){return headers.filter(h=>columnType(h)==='numeric');}
+function categoricalCols(){return headers.filter(h=>columnType(h)==='categorical');}
+function stats(col){
+  const vals=rows.map(r=>Number(r[col])).filter(v=>!isNaN(v)).sort((a,b)=>a-b);
+  const mean=vals.reduce((a,b)=>a+b,0)/(vals.length||1);
+  const median=vals.length?(vals.length%2?vals[(vals.length-1)/2]:(vals[vals.length/2-1]+vals[vals.length/2])/2):0;
+  return {mean,median,min:vals[0],max:vals[vals.length-1],vals};
+}
+
+function animate(el,target,decimals=0,suffix=''){
+  const start=performance.now(),dur=1100;
+  function tick(t){
+    const p=Math.min((t-start)/dur,1),e=1-Math.pow(1-p,3);
+    el.textContent=fmt(target*e)+suffix;
+    if(p<1)requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+function buildDashboard(){
+  const numeric=numericCols(),categorical=categoricalCols();
+  const totalCells=rows.length*headers.length;
+  const missing=rows.reduce((s,r)=>s+headers.filter(h=>r[h]==='').length,0);
+  const completeness=totalCells?((totalCells-missing)/totalCells*100):0;
+  const primary=numeric[0];
+  const s=primary?stats(primary):null;
+
+  animate($('kpiRows'),rows.length);
+  animate($('kpiCols'),headers.length);
+  animate($('kpiComplete'),completeness,1);
+  $('fieldBreakdown').textContent=`${numeric.length} numeric • ${categorical.length} categorical`;
+  $('missingDetail').textContent=`${missing} missing cells`;
+  if(s){
+    animate($('kpiMean'),s.mean,2);
+    $('kpiMedian').textContent=`Median: ${fmt(s.median)} • ${primary}`;
+  }else{
+    $('kpiMean').textContent='—';$('kpiMedian').textContent='No numeric column detected';
+  }
+
+  buildInsights(numeric,categorical,missing,completeness,primary,s);
+  fillSelectors(numeric,categorical,primary);
+  renderDist();
+  renderTrend();
+  renderTable();
+}
+
+function buildInsights(numeric,categorical,missing,completeness,primary,s){
+  const out=[];
+  out.push(`Dataset contains <b>${rows.length}</b> records across <b>${headers.length}</b> fields (${numeric.length} numeric, ${categorical.length} categorical).`);
+  out.push(`Data completeness is <b>${completeness.toFixed(1)}%</b>, with <b>${missing}</b> missing cells requiring attention.`);
+  if(categorical.length){
+    const col=categorical[0],counts={};
+    rows.forEach(r=>{const v=r[col]||'(blank)';counts[v]=(counts[v]||0)+1;});
+    const top=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+    out.push(`Leading <b>${col}</b> category: <b>${top[0]}</b>, representing <b>${((top[1]/rows.length)*100).toFixed(1)}%</b> of records.`);
+  }
+  if(primary&&s){
+    out.push(`<b>${primary}</b> ranges from <b>${fmt(s.min)}</b> to <b>${fmt(s.max)}</b>, with a mean of <b>${fmt(s.mean)}</b> and median of <b>${fmt(s.median)}</b>.`);
+    if(s.max&&s.mean&&s.max>s.mean*3)out.push(`Potential outlier alert: the maximum <b>${primary}</b> value is more than 3× the mean.`);
+    const nums=numeric.slice(0,4),corrs=[];
+    nums.forEach(c=>{
+      if(c===primary)return;
+      const pairs=rows.map(r=>[Number(r[primary]),Number(r[c])]).filter(p=>!isNaN(p[0])&&!isNaN(p[1]));
+      if(pairs.length<3)return;
+      const mx=pairs.reduce((a,p)=>a+p[0],0)/pairs.length,my=pairs.reduce((a,p)=>a+p[1],0)/pairs.length;
+      let n=0,d1=0,d2=0;
+      pairs.forEach(([x,y])=>{const a=x-mx,b=y-my;n+=a*b;d1+=a*a;d2+=b*b;});
+      const r=d1&&d2?n/Math.sqrt(d1*d2):0;
+      corrs.push([c,r]);
+    });
+    if(corrs.length){
+      const best=corrs.sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]))[0];
+      out.push(`Strongest observed numeric relationship is between <b>${primary}</b> and <b>${best[0]}</b> (correlation <b>${best[1].toFixed(2)}</b>).`);
+    }
+  }
+  const missingCols=headers.map(h=>[h,rows.filter(r=>r[h]==='').length]).sort((a,b)=>b[1]-a[1])[0];
+  if(missingCols&&missingCols[1]>0)out.push(`<b>${missingCols[0]}</b> has the highest missing-value count: <b>${missingCols[1]}</b> empty entries.`);
+  $('insights').innerHTML=out.map(t=>`<li class="flex gap-3"><span class="accent">◆</span><span>${t}</span></li>`).join('');
+}
+
+function fillSelectors(numeric,categorical,primary){
+  const dist=$('distCol'),x=$('xCol'),y=$('yCol');
+  dist.innerHTML=[...categorical,...numeric].map(c=>`<option>${c}</option>`).join('');
+  x.innerHTML=headers.map(c=>`<option>${c}</option>`).join('');
+  y.innerHTML=numeric.map(c=>`<option${c===primary?' selected':''}>${c}</option>`).join('');
+  if(categorical.length)dist.value=categorical[0];
+  else if(numeric.length)dist.value=numeric[0];
+  if(numeric.length)x.value=numeric.includes(headers[0])?headers[0]:numeric[0];
+}
+
+function chartBase(){
+  return{responsive:true,maintainAspectRatio:false,animation:{duration:900,easing:'easeOutQuart'},
+    plugins:{legend:{labels:{color:'#FAF3DD'}},tooltip:{backgroundColor:'#24101d',borderColor:'rgba(255,237,168,.3)',borderWidth:1,titleColor:'#FFEDA8',bodyColor:'#FAF3DD'}},
+    scales:{x:{ticks:{color:'#D8C3B8'},grid:{color:'rgba(255,237,168,.08)'}},y:{ticks:{color:'#D8C3B8'},grid:{color:'rgba(255,237,168,.08)'}}}};
+}
+
+function renderDist(){
+  const col=$('distCol').value,type=columnType(col),ctx=$('distChart');
+  let labels,data;
+  if(type==='categorical'){
+    const counts={};rows.forEach(r=>{const v=r[col]||'(blank)';counts[v]=(counts[v]||0)+1;});
+    const entries=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    labels=entries.map(e=>e[0]);data=entries.map(e=>e[1]);
+  }else{
+    const vals=rows.map(r=>Number(r[col])).filter(v=>!isNaN(v));
+    const min=Math.min(...vals),max=Math.max(...vals),bins=6,size=(max-min)/bins||1;
+    const buckets=Array.from({length:bins},()=>0);
+    vals.forEach(v=>buckets[Math.min(bins-1,Math.floor((v-min)/size))]++);
+    labels=buckets.map((_,i)=>`${fmt(min+i*size)}–${fmt(min+(i+1)*size)}`);data=buckets;
+  }
+  charts.dist?.destroy();
+  charts.dist=new Chart(ctx,type==='categorical'?{
+    type:'doughnut',data:{labels,datasets:[{data,backgroundColor:PALETTE,borderColor:'#301728',borderWidth:3}]},
+    options:{...chartBase(),scales:{}}}:{type:'bar',data:{labels,datasets:[{label:col,data,backgroundColor:'#FFEDA8',borderRadius:8}]},options:chartBase()});
+}
+
+function renderTrend(){
+  const x=$('xCol').value,y=$('yCol').value,ctx=$('trendChart');
+  const xNumeric=columnType(x)==='numeric';
+  let labels,data;
+  if(xNumeric){
+    const pairs=rows.map(r=>[Number(r[x]),Number(r[y])]).filter(p=>!isNaN(p[0])&&!isNaN(p[1])).sort((a,b)=>a[0]-b[0]);
+    labels=pairs.map(p=>fmt(p[0]));data=pairs.map(p=>p[1]);
+  }else{
+    const groups={};rows.forEach(r=>{const k=r[x]||'(blank)';const v=Number(r[y]);if(!isNaN(v)){groups[k]=groups[k]||[];groups[k].push(v);}});
+    const entries=Object.entries(groups).slice(0,20);
+    labels=entries.map(e=>e[0]);data=entries.map(e=>e[1].reduce((a,b)=>a+b,0)/e[1].length);
+  }
+  charts.trend?.destroy();
+  charts.trend=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:y,data,borderColor:'#FFEDA8',backgroundColor:'rgba(255,237,168,.16)',fill:true,tension:.4,pointBackgroundColor:'#F4D06F',pointRadius:3}]},options:chartBase()});
+}
+
+function renderTable(){
+  const t=$('previewTable');
+  t.innerHTML=`<thead><tr>${headers.map(h=>`<th class="px-3 py-3 text-left text-xs uppercase tracking-wider muted">${h}</th>`).join('')}</tr></thead>
+  <tbody>${rows.slice(0,15).map(r=>`<tr>${headers.map(h=>`<td class="px-3 py-2 whitespace-nowrap">${r[h]===''?'<span class="missing">missing</span>':r[h]}</td>`).join('')}</tr>`).join('')}</tbody>`;
+}
+
+function cleanAndDownload(){
+  const cleaned=rows.filter(r=>headers.some(h=>r[h]!=='')).map(r=>{
+    const o={};headers.forEach(h=>o[h]=String(r[h]??'').trim());return o;
+  });
+  const esc=v=>{v=String(v??'');return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v;};
+  const csv=[headers.join(','),...cleaned.map(r=>headers.map(h=>esc(r[h])).join(','))].join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='cleaned-data.csv';a.click();URL.revokeObjectURL(a.href);
+  showToast('Cleaned CSV downloaded ✓');
+}
+
+function showToast(msg){
+  const t=$('toast');t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2200);
+}
+
+/* Sample e-commerce / student dataset */
+const SAMPLE=`student_id,name,course,category,score,attendance_pct,study_hours,missing_field
+1,Ava,Mathematics,STEM,88,92,7,
+2,Liam,Biology,STEM,76,84,5,low
+3,Sophia,History,Humanities,91,96,8,
+4,Noah,Computer Science,STEM,67,71,3,high
+5,Mia,Economics,Business,82,89,6,
+6,Ethan,Psychology,Humanities,74,78,4,low
+7,Isabella,Marketing,Business,95,98,9,
+8,Lucas,Physics,STEM,59,62,2,high
+9,Amelia,Literature,Humanities,87,91,7,
+10,Mason,Statistics,STEM,79,85,6,
+11,Harper,Business Law,Business,71,80,5,
+12,Elijah,Data Science,STEM,93,97,10,`;
+
+/* Events */
+$('dropzone').onclick=()=>$('fileInput').click();
+$('fileInput').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>loadCSV(r.result);r.readAsText(f);};
+['dragenter','dragover'].forEach(ev=>$('dropzone').addEventListener(ev,e=>{e.preventDefault();$('dropzone').classList.add('dragging');}));
+['dragleave','drop'].forEach(ev=>$('dropzone').addEventListener(ev,e=>{e.preventDefault();$('dropzone').classList.remove('dragging');}));
+$('dropzone').addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(!f)return;const r=new FileReader();r.onload=()=>loadCSV(r.result);r.readAsText(f);});
+$('sampleBtn').onclick=()=>loadCSV(SAMPLE);
+$('pasteBtn').onclick=()=>$('pasteModal').classList.remove('hidden');
+$('closePaste').onclick=$('cancelPaste').onclick=()=>$('pasteModal').classList.add('hidden');
+$('usePaste').onclick=()=>{loadCSV($('pasteArea').value);$('pasteModal').classList.add('hidden');};
+$('clearBtn').onclick=()=>{rows=[];headers=[];Object.values(charts).forEach(c=>c?.destroy());$('insights').innerHTML='';$('previewTable').innerHTML='';['kpiRows','kpiCols','kpiComplete','kpiMean'].forEach(id=>$(id).textContent='0');$('kpiMedian').textContent='Median: —';};
+$('distCol').onchange=renderDist;
+$('xCol').onchange=renderTrend;
+$('yCol').onchange=renderTrend;
+$('downloadBtn').onclick=cleanAndDownload;
+$('copySummary').onclick=async()=>{
+  const text=[...$('insights').children].map(li=>li.textContent.trim()).join('\n• ');
+  await navigator.clipboard.writeText('• '+text);
+  showToast('Executive summary copied ✓');
+};
+
+loadCSV(SAMPLE);
+</script>
+</body>
+</html>
