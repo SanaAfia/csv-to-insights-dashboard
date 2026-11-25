@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.tailwindcss.com https://cdn.jsdelivr.net 'sha256-/aeqJg+7VTuLtpsPUzjJ8MDiigGHyN+IIvW5fQ32pPM='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'" />
 <title>Messy CSV → Insights | Instant Dashboard</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.tailwindcss.com/3.4.17" integrity="sha384-igm5BeiBt36UU4gqwWS7imYmelpTsZlQ45FZf+XBn9MuJbn4nQr7yx1yFydocC/K" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha384-9nhczxUqK87bcKHh20fSQcTGD4qq5GhayNYSYWqwBkINBhOfQLg/P5HG5lF1urn4" crossorigin="anonymous"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -175,6 +176,9 @@ let rows=[],headers=[],charts={dist:null,trend:null};
 const $=id=>document.getElementById(id);
 const isNum=v=>v!==''&&v!==null&&v!==undefined&&!isNaN(Number(v));
 const fmt=n=>Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
+const escapeHTML=value=>String(value??'').replace(/[&<>"']/g,char=>({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+})[char]);
 
 /* CSV parser: quoted commas, escaped quotes, whitespace, blank rows */
 function parseCSV(text){
@@ -201,7 +205,7 @@ function loadCSV(text){
   if(parsed.length<2){alert('Please provide a CSV with a header row and at least one data row.');return;}
   headers=parsed[0].map(h=>String(h).trim()||'Column');
   rows=parsed.slice(1).map(r=>{
-    const o={};headers.forEach((h,i)=>o[h]=String(r[i]??'').trim());
+    const o=Object.create(null);headers.forEach((h,i)=>o[h]=String(r[i]??'').trim());
     return o;
   });
   buildDashboard();
@@ -262,14 +266,14 @@ function buildInsights(numeric,categorical,missing,completeness,primary,s){
   out.push(`Dataset contains <b>${rows.length}</b> records across <b>${headers.length}</b> fields (${numeric.length} numeric, ${categorical.length} categorical).`);
   out.push(`Data completeness is <b>${completeness.toFixed(1)}%</b>, with <b>${missing}</b> missing cells requiring attention.`);
   if(categorical.length){
-    const col=categorical[0],counts={};
+    const col=categorical[0],counts=Object.create(null);
     rows.forEach(r=>{const v=r[col]||'(blank)';counts[v]=(counts[v]||0)+1;});
     const top=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
-    out.push(`Leading <b>${col}</b> category: <b>${top[0]}</b>, representing <b>${((top[1]/rows.length)*100).toFixed(1)}%</b> of records.`);
+    out.push(`Leading <b>${escapeHTML(col)}</b> category: <b>${escapeHTML(top[0])}</b>, representing <b>${((top[1]/rows.length)*100).toFixed(1)}%</b> of records.`);
   }
   if(primary&&s){
-    out.push(`<b>${primary}</b> ranges from <b>${fmt(s.min)}</b> to <b>${fmt(s.max)}</b>, with a mean of <b>${fmt(s.mean)}</b> and median of <b>${fmt(s.median)}</b>.`);
-    if(s.max&&s.mean&&s.max>s.mean*3)out.push(`Potential outlier alert: the maximum <b>${primary}</b> value is more than 3× the mean.`);
+    out.push(`<b>${escapeHTML(primary)}</b> ranges from <b>${fmt(s.min)}</b> to <b>${fmt(s.max)}</b>, with a mean of <b>${fmt(s.mean)}</b> and median of <b>${fmt(s.median)}</b>.`);
+    if(s.max&&s.mean&&s.max>s.mean*3)out.push(`Potential outlier alert: the maximum <b>${escapeHTML(primary)}</b> value is more than 3× the mean.`);
     const nums=numeric.slice(0,4),corrs=[];
     nums.forEach(c=>{
       if(c===primary)return;
@@ -283,19 +287,19 @@ function buildInsights(numeric,categorical,missing,completeness,primary,s){
     });
     if(corrs.length){
       const best=corrs.sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]))[0];
-      out.push(`Strongest observed numeric relationship is between <b>${primary}</b> and <b>${best[0]}</b> (correlation <b>${best[1].toFixed(2)}</b>).`);
+      out.push(`Strongest observed numeric relationship is between <b>${escapeHTML(primary)}</b> and <b>${escapeHTML(best[0])}</b> (correlation <b>${best[1].toFixed(2)}</b>).`);
     }
   }
   const missingCols=headers.map(h=>[h,rows.filter(r=>r[h]==='').length]).sort((a,b)=>b[1]-a[1])[0];
-  if(missingCols&&missingCols[1]>0)out.push(`<b>${missingCols[0]}</b> has the highest missing-value count: <b>${missingCols[1]}</b> empty entries.`);
+  if(missingCols&&missingCols[1]>0)out.push(`<b>${escapeHTML(missingCols[0])}</b> has the highest missing-value count: <b>${missingCols[1]}</b> empty entries.`);
   $('insights').innerHTML=out.map(t=>`<li class="flex gap-3"><span class="accent">◆</span><span>${t}</span></li>`).join('');
 }
 
 function fillSelectors(numeric,categorical,primary){
   const dist=$('distCol'),x=$('xCol'),y=$('yCol');
-  dist.innerHTML=[...categorical,...numeric].map(c=>`<option>${c}</option>`).join('');
-  x.innerHTML=headers.map(c=>`<option>${c}</option>`).join('');
-  y.innerHTML=numeric.map(c=>`<option${c===primary?' selected':''}>${c}</option>`).join('');
+  dist.innerHTML=[...categorical,...numeric].map(c=>`<option>${escapeHTML(c)}</option>`).join('');
+  x.innerHTML=headers.map(c=>`<option>${escapeHTML(c)}</option>`).join('');
+  y.innerHTML=numeric.map(c=>`<option${c===primary?' selected':''}>${escapeHTML(c)}</option>`).join('');
   if(categorical.length)dist.value=categorical[0];
   else if(numeric.length)dist.value=numeric[0];
   if(numeric.length)x.value=numeric.includes(headers[0])?headers[0]:numeric[0];
@@ -311,7 +315,7 @@ function renderDist(){
   const col=$('distCol').value,type=columnType(col),ctx=$('distChart');
   let labels,data;
   if(type==='categorical'){
-    const counts={};rows.forEach(r=>{const v=r[col]||'(blank)';counts[v]=(counts[v]||0)+1;});
+    const counts=Object.create(null);rows.forEach(r=>{const v=r[col]||'(blank)';counts[v]=(counts[v]||0)+1;});
     const entries=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,8);
     labels=entries.map(e=>e[0]);data=entries.map(e=>e[1]);
   }else{
@@ -335,7 +339,7 @@ function renderTrend(){
     const pairs=rows.map(r=>[Number(r[x]),Number(r[y])]).filter(p=>!isNaN(p[0])&&!isNaN(p[1])).sort((a,b)=>a[0]-b[0]);
     labels=pairs.map(p=>fmt(p[0]));data=pairs.map(p=>p[1]);
   }else{
-    const groups={};rows.forEach(r=>{const k=r[x]||'(blank)';const v=Number(r[y]);if(!isNaN(v)){groups[k]=groups[k]||[];groups[k].push(v);}});
+    const groups=Object.create(null);rows.forEach(r=>{const k=r[x]||'(blank)';const v=Number(r[y]);if(!isNaN(v)){groups[k]=groups[k]||[];groups[k].push(v);}});
     const entries=Object.entries(groups).slice(0,20);
     labels=entries.map(e=>e[0]);data=entries.map(e=>e[1].reduce((a,b)=>a+b,0)/e[1].length);
   }
@@ -345,16 +349,20 @@ function renderTrend(){
 
 function renderTable(){
   const t=$('previewTable');
-  t.innerHTML=`<thead><tr>${headers.map(h=>`<th class="px-3 py-3 text-left text-xs uppercase tracking-wider muted">${h}</th>`).join('')}</tr></thead>
-  <tbody>${rows.slice(0,15).map(r=>`<tr>${headers.map(h=>`<td class="px-3 py-2 whitespace-nowrap">${r[h]===''?'<span class="missing">missing</span>':r[h]}</td>`).join('')}</tr>`).join('')}</tbody>`;
+  t.innerHTML=`<thead><tr>${headers.map(h=>`<th class="px-3 py-3 text-left text-xs uppercase tracking-wider muted">${escapeHTML(h)}</th>`).join('')}</tr></thead>
+  <tbody>${rows.slice(0,15).map(r=>`<tr>${headers.map(h=>`<td class="px-3 py-2 whitespace-nowrap">${r[h]===''?'<span class="missing">missing</span>':escapeHTML(r[h])}</td>`).join('')}</tr>`).join('')}</tbody>`;
 }
 
 function cleanAndDownload(){
   const cleaned=rows.filter(r=>headers.some(h=>r[h]!=='')).map(r=>{
     const o={};headers.forEach(h=>o[h]=String(r[h]??'').trim());return o;
   });
-  const esc=v=>{v=String(v??'');return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v;};
-  const csv=[headers.join(','),...cleaned.map(r=>headers.map(h=>esc(r[h])).join(','))].join('\n');
+  const safeCell=v=>{
+    const text=String(v??'');
+    return /^\s*[=+\-@]/.test(text)&&!Number.isFinite(Number(text.trim()))?`'${text}`:text;
+  };
+  const esc=v=>{v=safeCell(v);return /[",\r\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v;};
+  const csv=[headers.map(esc).join(','),...cleaned.map(r=>headers.map(h=>esc(r[h])).join(','))].join('\n');
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download='cleaned-data.csv';a.click();URL.revokeObjectURL(a.href);
